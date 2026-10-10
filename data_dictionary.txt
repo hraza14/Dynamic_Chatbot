@@ -1,0 +1,39 @@
+ABOUT THE DATA: Crickslab player data, mostly Pakistani domestic/club cricket (also Kuwait, Italy etc.). ~10,000 players, ~16,000 matches. Many stats are club/tape-ball level, not international. Most players have a single-word name.
+
+WHICH TABLE TO USE
+- player_career (VIEW): ONE ROW PER PLAYER with profile + career batting + bowling + fielding. Use this first for almost every player question (top scorers, best averages, most wickets, by role/nationality). Careers: runs, wickets, bat_average, economy, catches...
+- batting_career / bowling_career: all-time totals per player (already inside player_career).
+- batting_by_format / bowling_by_format: breakdown by competition. format_group is T20, T10, ODI, T30, T40, 'Test / multi-day' or Other. format_label is the raw competition name. A player can have SEVERAL rows for the same format_group, so SUM() runs/wickets per player. These rows are NOT guaranteed to add up to the career total, so never add them to batting_career.
+- players: profile only (name, nationality, role, batting_style, bowling_style, city, age_years). total_matches/total_runs/total_wickets are the career totals.
+- matches: ONE ROW PER MATCH (team1, team2, result, winner_name, match_date, format, tournament_stage). player_matches(player_id, match_id) says who played in which match.
+- awards: one row per award with the player's performance in that match. award_type values: 'Player of the match', 'A Player of the match', 'Tournaments Player of the match', 'A Player of the Tournament'. To count awards use COUNT(*) per player_id; to count only match awards use award_type IN ('Player of the match','A Player of the match').
+
+RULES AND TRAPS
+- Missing values are NULL (the source had '--'). Filter e.g. WHERE bat_average IS NOT NULL.
+- Names are NOT unique (about 8,700 distinct names for 10,000 players). Always SELECT player_id together with name, and GROUP BY player_id (not name).
+- Search names with LIKE '%text%' (case-insensitive). Nationality is NULL for ~2,400 players (unknown), not 'Pakistan'.
+- 'Average' questions on tiny samples are misleading: for best batting average require bat_innings >= 20; for bowling average/economy require overs >= 50 (or wickets >= 20) unless the user says otherwise. Lower bowling average/economy is better.
+- strike_rate = runs per 100 balls (batting). bowl_strike_rate = balls per wicket. economy = runs per over.
+- hundreds / fifties are counts of 100s and 50s. fours/sixes are boundary counts. five_wicket_hauls = 5-wicket innings.
+- matches.match_date is the local date (YYYY-MM-DD); match_year is the year. matches.format is only filled for about 77% of matches (T20, T10, ODI); NULL means unknown.
+- matches.winner_name is the team name taken from the result text (often an abbreviation like 'KK'). win_margin + win_margin_type ('runs', 'wickets', 'innings and runs', 'super over'). winner_side ('team1'/'team2') is filled for ~90% of results; NULL when the winner could not be matched to a team. matches.result is NULL when no result is recorded. Team names are free text and may be spelled differently; use LIKE '%name%'.
+- Team names are not linked to players. To find a team's players use awards.team, or a match's players via player_matches.
+- matches.status is Completed, Upcoming, Live or NULL.
+
+EXAMPLES (question -> SQL)
+Top 10 run scorers:
+SELECT player_id, name, runs FROM player_career WHERE runs IS NOT NULL ORDER BY runs DESC LIMIT 10
+Best T20 strike rate among players with 500+ T20 runs:
+SELECT p.player_id, p.name, SUM(b.runs) AS runs, ROUND(SUM(b.runs*b.strike_rate)/SUM(b.runs),2) AS strike_rate FROM batting_by_format b JOIN players p ON p.player_id=b.player_id WHERE b.format_group='T20' GROUP BY p.player_id HAVING SUM(b.runs)>=500 AND SUM(b.runs)>0 ORDER BY strike_rate DESC LIMIT 10
+Most wickets by left-arm bowlers:
+SELECT player_id, name, bowling_style, wickets FROM player_career WHERE bowling_style LIKE 'Left-arm%' OR bowling_style LIKE 'Slow left-arm%' ORDER BY wickets DESC LIMIT 10
+How many matches were played each year:
+SELECT match_year, COUNT(*) AS matches FROM matches GROUP BY match_year ORDER BY match_year
+Matches won by a team:
+SELECT COUNT(*) AS wins FROM matches WHERE winner_name LIKE '%Lahore Qalandars%'
+Most player-of-the-match awards:
+SELECT p.player_id, p.name, COUNT(*) AS awards FROM awards a JOIN players p ON p.player_id=a.player_id WHERE a.award_type IN ('Player of the match','A Player of the match') GROUP BY p.player_id ORDER BY awards DESC LIMIT 10
+Number of players per nationality:
+SELECT nationality, COUNT(*) AS players FROM players WHERE nationality IS NOT NULL GROUP BY nationality ORDER BY players DESC
+Matches played by a player named Babar:
+SELECT m.match_date, m.team1, m.team2, m.result FROM player_matches pm JOIN matches m ON m.match_id=pm.match_id JOIN players p ON p.player_id=pm.player_id WHERE p.name LIKE '%Babar%' ORDER BY m.match_date DESC LIMIT 50

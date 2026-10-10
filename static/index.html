@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cricket Data Chatbot</title>
+<style>
+  :root{--bg:#f4f6f8;--card:#fff;--ink:#1b2430;--muted:#667085;--brand:#0b6b3a;--brand-d:#085530;--line:#e3e8ef;--err:#b42318;--warn:#b54708}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);height:100vh;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--brand);color:#fff}
+  .brand{font-weight:650;font-size:17px}.spacer{flex:1}
+  .pill{font-size:12.5px;background:rgba(255,255,255,.18);padding:3px 10px;border-radius:99px}
+  .pill.warn{background:#fdb022;color:#3b2500}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#fff;padding:7px 14px}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}button.primary:hover{background:var(--brand-d)}
+  header button{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:#fff}
+  header button:hover{background:rgba(255,255,255,.25)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  main{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;max-width:980px;width:100%;margin:0 auto}
+  .msg{max-width:100%;padding:11px 15px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+  .msg.user{align-self:flex-end;background:var(--brand);color:#fff;border-color:var(--brand);max-width:75%}
+  .msg.err{border-color:#fda29b;background:#fef3f2;color:var(--err)}
+  .answer{margin-bottom:8px;white-space:pre-wrap}
+  .tablewrap{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:8px}
+  table{border-collapse:collapse;width:100%;font-size:13.5px}
+  th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{background:#f0f3f6;position:sticky;top:0}
+  details{margin-top:8px;color:var(--muted);font-size:13px}pre{margin:6px 0 0;padding:10px;background:#f0f3f6;border-radius:8px;overflow:auto;color:var(--ink)}
+  .note{color:var(--muted);font-size:12.5px;margin-top:6px}
+  #chips{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 8px;max-width:980px;width:100%;margin:0 auto}
+  #chips button{font-size:13px;border-radius:99px;background:#fff}
+  form#form{display:flex;gap:10px;padding:12px 18px 18px;max-width:980px;width:100%;margin:0 auto}
+  #q{flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:10px;font:inherit}
+  dialog{border:none;border-radius:14px;padding:22px;width:min(560px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  dialog::backdrop{background:rgba(16,24,40,.45)}
+  h3{margin:0 0 12px}label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+  dialog input[type=text],dialog input[type=password],dialog input[type=number],dialog select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+  .row{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+  #testResult{margin-top:10px;font-size:13.5px;white-space:pre-wrap}.ok{color:var(--brand)}.bad{color:var(--err)}
+  .tbl{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13.5px}.tbl b{font-size:14px}
+  .linkbtn{border:none;background:none;color:var(--err);padding:0;font-size:12.5px;text-decoration:underline}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">🏏 Cricket Data Chatbot</div>
+  <div class="spacer"></div>
+  <span id="pill" class="pill">…</span>
+  <button id="btnData">Data</button>
+  <button id="btnSettings">Settings</button>
+</header>
+
+<main id="chat"></main>
+<div id="chips"></div>
+<form id="form" autocomplete="off">
+  <input id="q" placeholder="Ask a question about your cricket data…">
+  <button class="primary" id="send">Send</button>
+</form>
+
+<dialog id="dlgSettings">
+  <h3>LLM settings</h3>
+  <label>Provider</label>
+  <select id="provider">
+    <option value="anthropic">Claude (Anthropic API)</option>
+    <option value="ollama">Ollama (local)</option>
+    <option value="openai">OpenAI-compatible (LM Studio, Groq, OpenRouter, …)</option>
+  </select>
+  <label>Endpoint (base URL)</label>
+  <input type="text" id="endpoint">
+  <label>API key</label>
+  <input type="password" id="apikey" autocomplete="off">
+  <div class="hint"><span id="keyHint"></span> <button type="button" class="linkbtn" id="clearKey">remove saved key</button></div>
+  <label>Model</label>
+  <input type="text" id="model" list="modelsList">
+  <datalist id="modelsList"></datalist>
+  <div class="hint">Tip: after “Test connection”, the models your server offers appear in this box’s dropdown.</div>
+  <label>Context size (Ollama only)</label>
+  <input type="number" id="numctx" min="1024" step="1024">
+  <label><input type="checkbox" id="summarize"> Write a short text answer above the table (one extra LLM call)</label>
+  <div class="row">
+    <button type="button" id="btnTest">Test connection</button>
+    <span class="spacer"></span>
+    <button type="button" id="btnClose">Close</button>
+    <button type="button" class="primary" id="btnSave">Save</button>
+  </div>
+  <div id="testResult"></div>
+</dialog>
+
+<dialog id="dlgData">
+  <h3>Data</h3>
+  <div id="tables"></div>
+  <label>Upload Excel (.xlsx) or CSV — each sheet becomes a table</label>
+  <input type="file" id="file" accept=".xlsx,.xlsm,.csv">
+  <label><input type="checkbox" id="replace" checked> Replace all existing data (untick to add/replace only the uploaded tables)</label>
+  <div class="row"><button type="button" class="primary" id="btnUpload">Import</button><span class="spacer"></span><button type="button" id="btnDataClose">Close</button></div>
+  <div id="uploadResult" class="hint"></div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) k === 'class' ? e.className = v : e.setAttribute(k, v);
+  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+}
+async function api(url, body, isForm) {
+  const opt = body === undefined ? {} : isForm ? { method: 'POST', body }
+    : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  const r = await fetch(url, opt);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || data.detail || r.statusText);
+  return data;
+}
+const LABEL = { anthropic: 'Claude', ollama: 'Ollama', openai: 'OpenAI-compatible' };
+const SUGGESTIONS = ['Which players scored the most runs?', 'How many matches were played in each format?',
+  'Top 5 wicket takers', 'Which team has won the most matches?', 'Average runs per innings for each player role'];
+
+let cfg = null, current = null, history = [];
+const pending = {}, clearKey = {};
+
+/* ---------- chat ---------- */
+function scrollDown() { const m = $('#chat'); m.scrollTop = m.scrollHeight; }
+function addUser(t) { $('#chat').append(h('div', { class: 'msg user' }, t)); scrollDown(); }
+function addBot(node, isErr) { const d = h('div', { class: 'msg' + (isErr ? ' err' : '') }, node); $('#chat').append(d); scrollDown(); return d; }
+
+function renderResult(r) {
+  const box = h('div');
+  if (r.answer) box.append(h('div', { class: 'answer' }, r.answer));
+  if (r.columns && r.columns.length && r.rows.length) {
+    const shown = r.rows.slice(0, 100);
+    box.append(h('div', { class: 'tablewrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, r.columns.map(c => h('th', {}, c)))),
+      h('tbody', {}, shown.map(row => h('tr', {}, row.map(v => h('td', {}, v === null ? '' : v))))))));
+    if (r.rows.length > 100 || r.truncated)
+      box.append(h('div', { class: 'note' }, `Showing the first ${shown.length} rows.`));
+  }
+  if (r.sql) box.append(h('details', {}, h('summary', {}, 'Show SQL' + (r.attempts > 1 ? ' (auto-corrected once)' : '')), h('pre', {}, r.sql)));
+  return box;
+}
+
+async function ask(q) {
+  q = q.trim(); if (!q) return;
+  $('#chips').style.display = 'none';
+  addUser(q); $('#q').value = ''; $('#send').disabled = true;
+  const wait = addBot('Thinking…');
+  try {
+    const r = await api('/api/chat', { question: q, history: history.slice(-3) });
+    wait.remove();
+    if (r.error) {
+      const box = h('div', {}, r.error);
+      if (r.sql) box.append(h('details', {}, h('summary', {}, 'Show SQL'), h('pre', {}, r.sql)));
+      addBot(box, true);
+    } else {
+      addBot(renderResult(r));
+      history.push({ question: q, sql: r.sql });
+    }
+  } catch (e) { wait.remove(); addBot('Request failed: ' + e.message, true); }
+  $('#send').disabled = false; $('#q').focus();
+}
+$('#form').addEventListener('submit', e => { e.preventDefault(); ask($('#q').value); });
+$('#chips').append(...SUGGESTIONS.map(s => h('button', { type: 'button', onclick: '' }, s)));
+$('#chips').querySelectorAll('button').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+
+/* ---------- settings ---------- */
+function updatePill() {
+  const p = cfg.provider, v = cfg.providers[p];
+  const missing = p === 'anthropic' && !v.has_key && !pending[p];
+  $('#pill').textContent = missing ? 'Claude · API key needed' : `${LABEL[p]} · ${v.model || 'no model set'}`;
+  $('#pill').className = 'pill' + (missing || !v.model ? ' warn' : '');
+}
+function fillSettings() {
+  const p = current = cfg.provider, v = cfg.providers[p];
+  $('#provider').value = p; $('#endpoint').value = v.endpoint; $('#model').value = v.model;
+  $('#apikey').value = pending[p] || '';
+  $('#numctx').value = cfg.num_ctx; $('#summarize').checked = cfg.summarize;
+  $('#keyHint').textContent = v.has_key ? 'A key is saved (leave blank to keep it).'
+    : p === 'ollama' ? 'Not needed for a local Ollama server.' : 'Paste your API key.';
+  $('#clearKey').style.display = v.has_key ? '' : 'none';
+  $('#testResult').textContent = '';
+}
+function stash() {
+  if (!current) return;
+  cfg.providers[current].endpoint = $('#endpoint').value.trim();
+  cfg.providers[current].model = $('#model').value.trim();
+  const k = $('#apikey').value.trim(); if (k) { pending[current] = k; delete clearKey[current]; }
+}
+$('#provider').addEventListener('change', () => { stash(); cfg.provider = $('#provider').value; fillSettings(); });
+$('#clearKey').addEventListener('click', () => { clearKey[current] = true; delete pending[current]; cfg.providers[current].has_key = false; fillSettings(); });
+$('#btnSettings').addEventListener('click', () => { fillSettings(); $('#dlgSettings').showModal(); });
+$('#btnClose').addEventListener('click', () => { loadConfig(); $('#dlgSettings').close(); });
+
+$('#btnTest').addEventListener('click', async () => {
+  stash();
+  const p = cfg.provider, out = $('#testResult');
+  out.className = ''; out.textContent = 'Testing… (a local model can take a while the first time it loads)';
+  $('#btnTest').disabled = true;
+  try {
+    const r = await api('/api/llm/test', { provider: p, endpoint: cfg.providers[p].endpoint, model: cfg.providers[p].model,
+      api_key: pending[p] || '', num_ctx: Number($('#numctx').value) || cfg.num_ctx });
+    const dl = $('#modelsList'); dl.replaceChildren(...(r.models || []).map(m => h('option', { value: m })));
+    if (r.ok) { out.className = 'ok'; out.textContent = `✔ Connected in ${r.seconds}s. Model replied: “${r.reply}”` + (r.models.length ? `\nModels available: ${r.models.slice(0, 12).join(', ')}` : ''); }
+    else { out.className = 'bad'; out.textContent = '✘ ' + r.error + (r.models && r.models.length ? `\nModels available: ${r.models.slice(0, 12).join(', ')}` : ''); }
+  } catch (e) { out.className = 'bad'; out.textContent = '✘ ' + e.message; }
+  $('#btnTest').disabled = false;
+});
+
+$('#btnSave').addEventListener('click', async () => {
+  stash();
+  const payload = { provider: cfg.provider, summarize: $('#summarize').checked, num_ctx: Number($('#numctx').value) || 8192, providers: {} };
+  for (const p in cfg.providers) {
+    payload.providers[p] = { endpoint: cfg.providers[p].endpoint, model: cfg.providers[p].model };
+    if (pending[p]) payload.providers[p].api_key = pending[p];
+    if (clearKey[p]) payload.providers[p].api_key = '__CLEAR__';
+  }
+  try {
+    cfg = await api('/api/config', payload);
+    for (const k in pending) delete pending[k]; for (const k in clearKey) delete clearKey[k];
+    updatePill(); $('#dlgSettings').close();
+  } catch (e) { $('#testResult').className = 'bad'; $('#testResult').textContent = '✘ Could not save: ' + e.message; }
+});
+async function loadConfig() { cfg = await api('/api/config'); updatePill(); }
+
+/* ---------- data ---------- */
+async function loadTables() {
+  const s = await api('/api/schema'), box = $('#tables'); box.replaceChildren();
+  if (!s.tables.length) box.append(h('div', { class: 'hint' }, 'No data loaded yet.'));
+  s.tables.forEach(t => box.append(h('div', { class: 'tbl' }, h('b', {}, t.name), ` — ${t.rows} rows`, h('div', { class: 'hint' }, t.columns.map(c => c.name).join(', ')))));
+  box.append(h('div', { class: 'hint' }, 'Database file: ' + s.path));
+}
+$('#btnData').addEventListener('click', async () => { $('#uploadResult').textContent = ''; await loadTables(); $('#dlgData').showModal(); });
+$('#btnDataClose').addEventListener('click', () => $('#dlgData').close());
+$('#btnUpload').addEventListener('click', async () => {
+  const f = $('#file').files[0], out = $('#uploadResult');
+  if (!f) { out.textContent = 'Choose a file first.'; return; }
+  const fd = new FormData(); fd.append('file', f); fd.append('replace', $('#replace').checked);
+  out.textContent = 'Importing…';
+  try {
+    const r = await api('/api/upload', fd, true);
+    out.textContent = 'Imported: ' + Object.entries(r.imported).map(([t, i]) => `${t} (${i.rows} rows)`).join(', ');
+    history = []; await loadTables();
+  } catch (e) { out.textContent = '✘ ' + e.message; }
+});
+
+loadConfig().then(() => { if (cfg.provider === 'anthropic' && !cfg.providers.anthropic.has_key) $('#btnSettings').click(); });
+</script>
+</body>
+</html>
